@@ -10,7 +10,9 @@
 
 struct Light {
 public:
-    Light(const Vec3f &p, const float &i) : position(p), intensity(i) {}
+    Light(const Vec3f &p, const float &i): 
+		position(p), intensity(i) {
+	}
 public:
     Vec3f position;
     float intensity;
@@ -18,8 +20,18 @@ public:
 
 struct Material {
 public:
-    Material(const float &r, const Vec4f &a, const Vec3f &color, const float &spec) : refractive_index(r), albedo(a), diffuse_color(color), specular_exponent(spec) {}
-    Material() : refractive_index(1), albedo(1,0,0,0), diffuse_color(), specular_exponent() {}
+    Material(const float &r, const Vec4f &a, const Vec3f &color, const float &spec): 
+		refractive_index(r), 
+		albedo(a), 
+		diffuse_color(color), 
+		specular_exponent(spec) {
+	}
+    Material(): 
+		refractive_index(1), 
+		albedo(1,0,0,0), 
+		diffuse_color(), 
+		specular_exponent() {
+	}
 public:
     float refractive_index;
     Vec4f albedo;
@@ -34,7 +46,11 @@ public:
     Material material;
 
 public:
-    Sphere(const Vec3f &c, const float &r, const Material &m) : center(c), radius(r), material(m) {}
+    Sphere(const Vec3f &c, const float &r, const Material &m): 
+		center(c), 
+		radius(r), 
+		material(m) {
+	}
 
     bool ray_intersect(const Vec3f &orig, const Vec3f &dir, float &t0) const {
         Vec3f L = center - orig;
@@ -50,8 +66,8 @@ public:
     }
 };
 
-Vec3f reflect(const Vec3f &I, const Vec3f &N) {
-    return I - N*2.f*(I*N);
+Vec3f reflect(const Vec3f& I, const Vec3f& N) {
+    return I - N*2.0f*(I*N);
 }
 
 Vec3f refract(const Vec3f &I, const Vec3f &N, const float &refractive_index) { // Snell's law
@@ -94,11 +110,14 @@ bool scene_intersect(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphe
     return std::min(spheres_dist, checkerboard_dist)<1000;
 }
 
-Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres, const std::vector<Light> &lights, size_t depth=0) {
-    Vec3f point, N;
+Vec3f castRay(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres, const std::vector<Light> &lights, size_t depth=0) {
+	const size_t depthLimit = 4;
+	
+    Vec3f point;
+	Vec3f N;
     Material material;
 
-    if (depth>4 || !scene_intersect(orig, dir, spheres, point, N, material)) {
+    if ((depth > depthLimit) || !scene_intersect(orig, dir, spheres, point, N, material)) {
         return Vec3f(0.2, 0.7, 0.8); // background color
     }
 
@@ -106,8 +125,8 @@ Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &s
     Vec3f refract_dir = refract(dir, N, material.refractive_index).normalize();
     Vec3f reflect_orig = reflect_dir*N < 0 ? point - N*1e-3 : point + N*1e-3; // offset the original point to avoid occlusion by the object itself
     Vec3f refract_orig = refract_dir*N < 0 ? point - N*1e-3 : point + N*1e-3;
-    Vec3f reflect_color = cast_ray(reflect_orig, reflect_dir, spheres, lights, depth + 1);
-    Vec3f refract_color = cast_ray(refract_orig, refract_dir, spheres, lights, depth + 1);
+    Vec3f reflect_color = castRay(reflect_orig, reflect_dir, spheres, lights, depth + 1);
+    Vec3f refract_color = castRay(refract_orig, refract_dir, spheres, lights, depth + 1);
 
     float diffuse_light_intensity = 0, specular_light_intensity = 0;
     for (size_t i=0; i<lights.size(); i++) {
@@ -127,18 +146,28 @@ Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &s
 }
 
 void render(const std::vector<Sphere>& spheres, const std::vector<Light> &lights) {
-    const int width    = 1024;
-    const int height   = 768;
-    const int fov      = M_PI/2.;
+	// Создаем буффер нужного размера под изображение
+    const int width = 1024;
+    const int height = 768;
+    const int fov = M_PI/2.0; // Угол обзора камеры
     std::vector<Vec3f> framebuffer(width*height);
-
+	
+	const float imageRatio = width / (float)height;
+	
     #pragma omp parallel for
     for (size_t j = 0; j<height; j++) {
         for (size_t i = 0; i<width; i++) {
-            float x =  (2*(i + 0.5)/(float)width  - 1)*tan(fov/2.)*width/(float)height;
-            float y = -(2*(j + 0.5)/(float)height - 1)*tan(fov/2.);
+			// Вычисляем нормализованное направление, по которому мы должны бросать луч из картинци в сцену
+			float tanValue = tan(fov/2.0);
+            float x = (2*(i + 0.5)/(float)width - 1) * tanValue * imageRatio;
+            float y = -(2*(j + 0.5)/(float)height - 1) * tanValue;
             Vec3f dir = Vec3f(x, y, -1).normalize();
-            framebuffer[i+j*width] = cast_ray(Vec3f(0,0,0), dir, spheres, lights);
+			
+			// Пускаем луч
+			Vec3f colorValue = castRay(Vec3f(0,0,0), dir, spheres, lights);
+			
+			// Сохраняем значение цвета
+            framebuffer[i+j*width] = colorValue;
         }
     }
 
