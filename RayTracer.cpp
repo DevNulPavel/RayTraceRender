@@ -130,37 +130,65 @@ Vec3f castRay(const Vec3f& orig, // Откуда бросаем луч
     
     // Ограничение глубины рекурсии
 	const size_t depthLimit = 4;
+    // Базовый цвет фона
+    const Vec3f backgroundColor(0.2, 0.7, 0.8);
 	
-    Vec3f point; // Точка пересечения со сферой
+    Vec3f hitPoint; // Точка пересечения со сферой
 	Vec3f N;     // Нормаль в точке пересечения
     Material material; // Материал в точке пересечения
 
-    if ((depth > depthLimit) || !sceneIntersect(orig, dir, spheres, point, N, material)) {
-        return Vec3f(0.2, 0.7, 0.8); // background color
+    // Если ограничесние по глубине или нет пересечения - возвращаем просто цвет фона
+    if ((depth > depthLimit) || !sceneIntersect(orig, dir, spheres, hitPoint, N, material)) {
+        return backgroundColor;
     }
-
-    Vec3f reflect_dir = reflect(dir, N).normalize();
-    Vec3f refract_dir = refract(dir, N, material.refractive_index).normalize();
-    Vec3f reflect_orig = reflect_dir*N < 0 ? point - N*1e-3 : point + N*1e-3; // offset the original point to avoid occlusion by the object itself
-    Vec3f refract_orig = refract_dir*N < 0 ? point - N*1e-3 : point + N*1e-3;
-    Vec3f reflect_color = castRay(reflect_orig, reflect_dir, spheres, lights, depth + 1);
-    Vec3f refract_color = castRay(refract_orig, refract_dir, spheres, lights, depth + 1);
-
-    float diffuse_light_intensity = 0, specular_light_intensity = 0;
-    for (size_t i=0; i<lights.size(); i++) {
-        Vec3f light_dir      = (lights[i].position - point).normalize();
-        float light_distance = (lights[i].position - point).norm();
-
-        Vec3f shadow_orig = light_dir*N < 0 ? point - N*1e-3 : point + N*1e-3; // checking if the point lies in the shadow of the lights[i]
-        Vec3f shadow_pt, shadow_N;
+    
+    // Направление отражения
+    Vec3f reflectDir = reflect(dir, N).normalize();
+    // Направление преломления
+    Vec3f refractDir = refract(dir, N, material.refractive_index).normalize();
+    // Точка, от которой происходит отражение
+    Vec3f reflectOrig = (reflectDir*N < 0) ? (hitPoint - N*1e-3) : (hitPoint + N*1e-3); // offset the original point to avoid occlusion by the object itself
+    // Точка, в которой происходит преломление
+    Vec3f refractOrig = (refractDir*N < 0) ? (hitPoint - N*1e-3) : (hitPoint + N*1e-3);
+    // Рекурсивный вызов для получения отражения в точке
+    Vec3f reflectColor = castRay(reflectOrig, reflectDir, spheres, lights, depth + 1);
+    // Рекурсивный вызов для получения преломления в точке
+    Vec3f refractСolor = castRay(refractOrig, refractDir, spheres, lights, depth + 1);
+    
+    // Обработца света
+    // Диффузная составляющая
+    float diffuseLightIntensity = 0;
+    // Бликовая составляющая
+    float specularLightIntensity = 0;
+    // Обходим все источники света
+    for (size_t i = 0; i < lights.size(); i++) {
+        // Вычисляем направление к источнику света
+        Vec3f lightDir = (lights[i].position - hitPoint).normalize();
+        // Дистанция к источнику света
+        float lightDistance = (lights[i].position - hitPoint).length();
+        
+        // Определяем - находится ли точка в тени для источника света, для этого бросаем луч к источнику света и проверяем, есть ли пересечение с чем-то
+        Vec3f shadowOrig = (lightDir*N < 0) ? (hitPoint - N*1e-3) : (hitPoint + N*1e-3); // checking if the point lies in the shadow of the lights[i]
+        Vec3f shadowPt; // Точка пересечения с чем-то
+        Vec3f shadowN;  // Нормаль в точке пересечения
         Material tmpmaterial;
-        if (sceneIntersect(shadow_orig, light_dir, spheres, shadow_pt, shadow_N, tmpmaterial) && (shadow_pt-shadow_orig).norm() < light_distance)
+        // Проверяем пересечение, и то, что находится между источником света и текущей точкой
+        bool hasIntersect = sceneIntersect(shadowOrig, lightDir, spheres, shadowPt, shadowN, tmpmaterial);
+        bool validIntersect = ((shadowPt-shadowOrig).length() < lightDistance);
+        if (hasIntersect && validIntersect){
             continue;
-
-        diffuse_light_intensity  += lights[i].intensity * std::max(0.f, light_dir*N);
-        specular_light_intensity += powf(std::max(0.f, -reflect(-light_dir, N)*dir), material.specular_exponent)*lights[i].intensity;
+        }
+        
+        // Добавляем значение интенсивности света
+        diffuseLightIntensity += lights[i].intensity * std::max(0.0f, lightDir*N);
+        // Добавляем бликовую составляющую
+        specularLightIntensity += powf(std::max(0.0f, -reflect(-lightDir, N)*dir), material.specular_exponent)*lights[i].intensity;
     }
-    return material.diffuse_color * diffuse_light_intensity * material.albedo[0] + Vec3f(1., 1., 1.)*specular_light_intensity * material.albedo[1] + reflect_color*material.albedo[2] + refract_color*material.albedo[3];
+    
+    Vec3f resultColor = (material.diffuse_color * diffuseLightIntensity * material.albedo[0]) +
+                        (Vec3f(1.0, 1.0, 1.0)*specularLightIntensity * material.albedo[1]) +
+                        (reflectColor*material.albedo[2] + refractСolor*material.albedo[3]);
+    return resultColor;
 }
 
 void render(const std::vector<Sphere>& spheres, const std::vector<Light> &lights) {

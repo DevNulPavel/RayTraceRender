@@ -75,11 +75,11 @@ template <typename T> struct vec<3,T> {
     const T& operator[](const size_t i) const { 
 		assert(i<3); return i<=0 ? x : (1==i ? y : z);
 	}
-    float norm() { 
+    float length() { 
 		return std::sqrt(x*x+y*y+z*z);
 	}
     vec<3,T>& normalize(T l=1) { 
-		*this = (*this)*(l/norm()); 
+		*this = (*this)*(l/length()); 
 		return *this; 
 	}
 public:
