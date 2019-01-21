@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 2.8)
-project (tinyraytracer)
+project (RayTraceRender)
 
 # Подключаем возможность проверки флага у компилятора
 include(CheckCXXCompilerFlag)
@@ -20,8 +20,11 @@ enable_cxx_compiler_flag_if_supported("-Wall")
 enable_cxx_compiler_flag_if_supported("-Wextra")
 enable_cxx_compiler_flag_if_supported("-pedantic")
 enable_cxx_compiler_flag_if_supported("-std=c++11")
-enable_cxx_compiler_flag_if_supported("-O3")
-enable_cxx_compiler_flag_if_supported("-fopenmp")
+#enable_cxx_compiler_flag_if_supported("-O3")
+enable_cxx_compiler_flag_if_supported("-fopenmp")   # Поддержка OpenMP
+enable_cxx_compiler_flag_if_supported("-g")         # Отладочная информация
+
+message("Result CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 
 # Находим все исходники
 file(GLOB SOURCES *.h *.cpp)

@@ -83,41 +83,59 @@ Vec3f refract(const Vec3f &I, const Vec3f &N, const float &refractive_index) { /
     return k < 0 ? Vec3f(0,0,0) : I*eta + n*(eta * cosi - sqrtf(k));
 }
 
-bool scene_intersect(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres, Vec3f &hit, Vec3f &N, Material &material) {
-    float spheres_dist = std::numeric_limits<float>::max();
-    for (size_t i=0; i < spheres.size(); i++) {
-        float dist_i;
-        if (spheres[i].ray_intersect(orig, dir, dist_i) && dist_i < spheres_dist) {
-            spheres_dist = dist_i;
-            hit = orig + dir*dist_i;
-            N = (hit - spheres[i].center).normalize();
-            material = spheres[i].material;
+// Проверка пересечения со сферой
+bool sceneIntersect(const Vec3f& orig, // Откуда мы бросаем луч
+                    const Vec3f& dir,  // Направление
+                    const std::vector<Sphere>& spheres, // Список сфер
+                    Vec3f& hit, // Место, где произошло пересечение со сферой
+                    Vec3f& N,   // Нормаль
+                    Material& material) { // Материал сферы с которой произошло пересечение
+    // Дистанция до ближайшей сцены
+    float spheresMaxDist = std::numeric_limits<float>::max();
+    for (size_t i = 0; i < spheres.size(); i++) {
+        // Проверяем, есть ли пересечение со сферой
+        float distI = 0; // Дистанция до сферы
+        bool hasIntersect = spheres[i].ray_intersect(orig, dir, distI);
+        
+        // Было ли пересейчение со сферой и является ли сфера более близкой, чем предыдущая
+        if (hasIntersect && (distI < spheresMaxDist)) {
+            spheresMaxDist = distI; // Сохраняем дистанцию до сферы как максимальную
+            hit = orig + dir*distI; // Точка пересечения - точка из экрана + направление, умноженное на расстояние до пересечения со сферой
+            N = (hit - spheres[i].center).normalize(); // Нормаль в точке пересечения
+            material = spheres[i].material; // Материал
         }
     }
-
-    float checkerboard_dist = std::numeric_limits<float>::max();
-    if (fabs(dir.y)>1e-3)  {
+    
+    // TODO: ???
+    float checkerboardDist = std::numeric_limits<float>::max();
+    if (fabs(dir.y) > 1e-3)  {
         float d = -(orig.y+4)/dir.y; // the checkerboard plane has equation y = -4
         Vec3f pt = orig + dir*d;
-        if (d>0 && fabs(pt.x)<10 && pt.z<-10 && pt.z>-30 && d<spheres_dist) {
-            checkerboard_dist = d;
+        if (d>0 && fabs(pt.x)<10 && pt.z<-10 && pt.z>-30 && d<spheresMaxDist) {
+            checkerboardDist = d;
             hit = pt;
             N = Vec3f(0,1,0);
             material.diffuse_color = (int(.5*hit.x+1000) + int(.5*hit.z)) & 1 ? Vec3f(1,1,1) : Vec3f(1, .7, .3);
             material.diffuse_color = material.diffuse_color*.3;
         }
     }
-    return std::min(spheres_dist, checkerboard_dist)<1000;
+    return std::min(spheresMaxDist, checkerboardDist)<1000;
 }
 
-Vec3f castRay(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres, const std::vector<Light> &lights, size_t depth=0) {
+Vec3f castRay(const Vec3f& orig, // Откуда бросаем луч
+              const Vec3f &dir,  // Направление луча
+              const std::vector<Sphere>& spheres,   // Список сфер
+              const std::vector<Light>& lights,     // Источники света
+              size_t depth=0) { // Текущая глубина рекурсии
+    
+    // Ограничение глубины рекурсии
 	const size_t depthLimit = 4;
 	
-    Vec3f point;
-	Vec3f N;
-    Material material;
+    Vec3f point; // Точка пересечения со сферой
+	Vec3f N;     // Нормаль в точке пересечения
+    Material material; // Материал в точке пересечения
 
-    if ((depth > depthLimit) || !scene_intersect(orig, dir, spheres, point, N, material)) {
+    if ((depth > depthLimit) || !sceneIntersect(orig, dir, spheres, point, N, material)) {
         return Vec3f(0.2, 0.7, 0.8); // background color
     }
 
@@ -136,7 +154,7 @@ Vec3f castRay(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &sp
         Vec3f shadow_orig = light_dir*N < 0 ? point - N*1e-3 : point + N*1e-3; // checking if the point lies in the shadow of the lights[i]
         Vec3f shadow_pt, shadow_N;
         Material tmpmaterial;
-        if (scene_intersect(shadow_orig, light_dir, spheres, shadow_pt, shadow_N, tmpmaterial) && (shadow_pt-shadow_orig).norm() < light_distance)
+        if (sceneIntersect(shadow_orig, light_dir, spheres, shadow_pt, shadow_N, tmpmaterial) && (shadow_pt-shadow_orig).norm() < light_distance)
             continue;
 
         diffuse_light_intensity  += lights[i].intensity * std::max(0.f, light_dir*N);
@@ -153,12 +171,12 @@ void render(const std::vector<Sphere>& spheres, const std::vector<Light> &lights
     std::vector<Vec3f> framebuffer(width*height);
 	
 	const float imageRatio = width / (float)height;
-	
+	const float tanValue = tan(fov/2.0);
+    
     #pragma omp parallel for
     for (size_t j = 0; j<height; j++) {
         for (size_t i = 0; i<width; i++) {
 			// Вычисляем нормализованное направление, по которому мы должны бросать луч из картинци в сцену
-			float tanValue = tan(fov/2.0);
             float x = (2*(i + 0.5)/(float)width - 1) * tanValue * imageRatio;
             float y = -(2*(j + 0.5)/(float)height - 1) * tanValue;
             Vec3f dir = Vec3f(x, y, -1).normalize();
@@ -187,17 +205,17 @@ void render(const std::vector<Sphere>& spheres, const std::vector<Light> &lights
 
 int main() {
 	// Создаем материалы
-    Material ivory(1.0, Vec4f(0.6,  0.3, 0.1, 0.0), Vec3f(0.4, 0.4, 0.3),   50.);
-    Material glass(1.5, Vec4f(0.0,  0.5, 0.1, 0.8), Vec3f(0.6, 0.7, 0.8),  125.);
-    Material red_rubber(1.0, Vec4f(0.9,  0.1, 0.0, 0.0), Vec3f(0.3, 0.1, 0.1),   10.);
-    Material mirror(1.0, Vec4f(0.0, 10.0, 0.8, 0.0), Vec3f(1.0, 1.0, 1.0), 1425.);
+    Material ivory(1.0, Vec4f(0.6,  0.3, 0.1, 0.0), Vec3f(0.4, 0.4, 0.3), 50.0);
+    Material glass(1.5, Vec4f(0.0,  0.5, 0.1, 0.8), Vec3f(0.6, 0.7, 0.8), 125.0);
+    Material redRubber(1.0, Vec4f(0.9,  0.1, 0.0, 0.0), Vec3f(0.3, 0.1, 0.1), 10.0);
+    Material mirror(1.0, Vec4f(0.0, 10.0, 0.8, 0.0), Vec3f(1.0, 1.0, 1.0), 1425.0);
 	
 	// Создаем сферы
     std::vector<Sphere> spheres;
-    spheres.push_back(Sphere(Vec3f(-3,    0,   -16), 2,      ivory));
-    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2,      glass));
-    spheres.push_back(Sphere(Vec3f( 1.5, -0.5, -18), 3, red_rubber));
-    spheres.push_back(Sphere(Vec3f( 7,    5,   -18), 4,     mirror));
+    spheres.push_back(Sphere(Vec3f(-3,    0,   -16), 2, ivory));
+    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, glass));
+    spheres.push_back(Sphere(Vec3f( 1.5, -0.5, -18), 3, redRubber));
+    spheres.push_back(Sphere(Vec3f( 7,    5,   -18), 4, mirror));
 	
 	// Создаем источники света
     std::vector<Light>  lights;
