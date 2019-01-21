@@ -6,37 +6,38 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <thread>
 #include "Geometry.h"
 
 struct Light {
 public:
-    Light(const Vec3f &p, const float &i): 
+    Light(const Vec3f& p, const float& i):
 		position(p), intensity(i) {
 	}
 public:
-    Vec3f position;
-    float intensity;
+    Vec3f position;  // Позиция источника света
+    float intensity; // Интенсивность света
 };
 
 struct Material {
 public:
-    Material(const float &r, const Vec4f &a, const Vec3f &color, const float &spec): 
-		refractive_index(r), 
+    Material(const float& r, const Vec4f &a, const Vec3f &color, const float &spec):
+		refractiveIndex(r), 
 		albedo(a), 
-		diffuse_color(color), 
-		specular_exponent(spec) {
+		diffuseСolor(color), 
+		specularExponent(spec) {
 	}
     Material(): 
-		refractive_index(1), 
+		refractiveIndex(1), 
 		albedo(1,0,0,0), 
-		diffuse_color(), 
-		specular_exponent() {
+		diffuseСolor(), 
+		specularExponent() {
 	}
 public:
-    float refractive_index;
+    float refractiveIndex;
     Vec4f albedo;
-    Vec3f diffuse_color;
-    float specular_exponent;
+    Vec3f diffuseСolor;
+    float specularExponent;
 };
 
 struct Sphere {
@@ -51,17 +52,27 @@ public:
 		radius(r), 
 		material(m) {
 	}
-
-    bool ray_intersect(const Vec3f &orig, const Vec3f &dir, float &t0) const {
+    
+    // Пересечение луча и сферы
+    bool rayIntersect(const Vec3f& orig, // Откуда луч
+                      const Vec3f& dir,  // Направление луча
+                      float& t0) const { // Дистанция от точки до границы сферы
+        // Вектор от точки к центру сферы
         Vec3f L = center - orig;
-        float tca = L*dir;
+        float tca = L*dir; // Векторное произведение
         float d2 = L*L - tca*tca;
-        if (d2 > radius*radius) return false;
+        if (d2 > radius*radius) {
+            return false;
+        }
         float thc = sqrtf(radius*radius - d2);
-        t0       = tca - thc;
+        t0 = tca - thc;
         float t1 = tca + thc;
-        if (t0 < 0) t0 = t1;
-        if (t0 < 0) return false;
+        if (t0 < 0) {
+            t0 = t1;
+        }
+        if (t0 < 0) {
+            return false;
+        }
         return true;
     }
 };
@@ -95,7 +106,7 @@ bool sceneIntersect(const Vec3f& orig, // Откуда мы бросаем лу�
     for (size_t i = 0; i < spheres.size(); i++) {
         // Проверяем, есть ли пересечение со сферой
         float distI = 0; // Дистанция до сферы
-        bool hasIntersect = spheres[i].ray_intersect(orig, dir, distI);
+        bool hasIntersect = spheres[i].rayIntersect(orig, dir, distI);
         
         // Было ли пересейчение со сферой и является ли сфера более близкой, чем предыдущая
         if (hasIntersect && (distI < spheresMaxDist)) {
@@ -115,8 +126,8 @@ bool sceneIntersect(const Vec3f& orig, // Откуда мы бросаем лу�
             checkerboardDist = d;
             hit = pt;
             N = Vec3f(0,1,0);
-            material.diffuse_color = (int(.5*hit.x+1000) + int(.5*hit.z)) & 1 ? Vec3f(1,1,1) : Vec3f(1, .7, .3);
-            material.diffuse_color = material.diffuse_color*.3;
+            material.diffuseСolor = (int(.5*hit.x+1000) + int(.5*hit.z)) & 1 ? Vec3f(1,1,1) : Vec3f(1, .7, .3);
+            material.diffuseСolor = material.diffuseСolor*.3;
         }
     }
     return std::min(spheresMaxDist, checkerboardDist)<1000;
@@ -145,7 +156,7 @@ Vec3f castRay(const Vec3f& orig, // Откуда бросаем луч
     // Направление отражения
     Vec3f reflectDir = reflect(dir, N).normalize();
     // Направление преломления
-    Vec3f refractDir = refract(dir, N, material.refractive_index).normalize();
+    Vec3f refractDir = refract(dir, N, material.refractiveIndex).normalize();
     // Точка, от которой происходит отражение
     Vec3f reflectOrig = (reflectDir*N < 0) ? (hitPoint - N*1e-3) : (hitPoint + N*1e-3); // offset the original point to avoid occlusion by the object itself
     // Точка, в которой происходит преломление
@@ -182,10 +193,10 @@ Vec3f castRay(const Vec3f& orig, // Откуда бросаем луч
         // Добавляем значение интенсивности света
         diffuseLightIntensity += lights[i].intensity * std::max(0.0f, lightDir*N);
         // Добавляем бликовую составляющую
-        specularLightIntensity += powf(std::max(0.0f, -reflect(-lightDir, N)*dir), material.specular_exponent)*lights[i].intensity;
+        specularLightIntensity += powf(std::max(0.0f, -reflect(-lightDir, N)*dir), material.specularExponent)*lights[i].intensity;
     }
     
-    Vec3f resultColor = (material.diffuse_color * diffuseLightIntensity * material.albedo[0]) +
+    Vec3f resultColor = (material.diffuseСolor * diffuseLightIntensity * material.albedo[0]) +
                         (Vec3f(1.0, 1.0, 1.0)*specularLightIntensity * material.albedo[1]) +
                         (reflectColor*material.albedo[2] + refractСolor*material.albedo[3]);
     return resultColor;
@@ -201,8 +212,8 @@ void render(const std::vector<Sphere>& spheres, const std::vector<Light> &lights
 	const float imageRatio = width / (float)height;
 	const float tanValue = tan(fov/2.0);
     
-    #pragma omp parallel for
-    for (size_t j = 0; j<height; j++) {
+    //#pragma omp parallel for
+    /*for (size_t j = 0; j<height; j++) {
         for (size_t i = 0; i<width; i++) {
 			// Вычисляем нормализованное направление, по которому мы должны бросать луч из картинци в сцену
             float x = (2*(i + 0.5)/(float)width - 1) * tanValue * imageRatio;
@@ -215,6 +226,34 @@ void render(const std::vector<Sphere>& spheres, const std::vector<Light> &lights
 			// Сохраняем значение цвета
             framebuffer[i+j*width] = colorValue;
         }
+    }*/
+    std::vector<std::thread> threads;
+    size_t sizePerThread = (width + std::thread::hardware_concurrency()) / std::thread::hardware_concurrency();
+    for (size_t threadNum = 0; threadNum < std::thread::hardware_concurrency(); threadNum++) {
+        std::thread thread([=, &framebuffer](){
+            
+            // Выполняем вычисления
+            size_t begin = sizePerThread*threadNum;
+            size_t end = begin + sizePerThread;
+            for (size_t j = begin; (j < end) && (j < height); j++) {
+                for (size_t i = 0; i<width; i++) {
+                    // Вычисляем нормализованное направление, по которому мы должны бросать луч из картинци в сцену
+                    float x = (2*(i + 0.5)/(float)width - 1) * tanValue * imageRatio;
+                    float y = -(2*(j + 0.5)/(float)height - 1) * tanValue;
+                    Vec3f dir = Vec3f(x, y, -1).normalize();
+                    
+                    // Пускаем луч
+                    Vec3f colorValue = castRay(Vec3f(0,0,0), dir, spheres, lights);
+                    
+                    // Сохраняем значение цвета
+                    framebuffer[i+j*width] = colorValue;
+                }
+            }
+        });
+        threads.push_back(std::move(thread));
+    }
+    for (size_t i = 0; i < threads.size(); i++) {
+        threads[i].join();
     }
 
     std::ofstream ofs; // save the framebuffer to file
